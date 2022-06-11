@@ -1,11 +1,4 @@
-"""
-Mask R-CNN
-The main Mask R-CNN model implementation.
 
-Copyright (c) 2017 Matterport, Inc.
-Licensed under the MIT License (see LICENSE for details)
-Written by Waleed Abdulla
-"""
 
 import os
 import random
@@ -31,9 +24,6 @@ assert LooseVersion(tf.__version__) >= LooseVersion("1.3")
 assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 
 
-############################################################
-#  Utility Functions
-############################################################
 
 def log(text, array=None):
     """Prints a text message. And, optionally, if a Numpy array is provided it
@@ -69,11 +59,7 @@ class BatchNorm(KL.BatchNormalization):
 
 
 def compute_backbone_shapes(config, image_shape):
-    """Computes the width and height of each stage of the backbone network.
-
-    Returns:
-        [N, (height, width)]. Where N is the number of stages
-    """
+    
     if callable(config.BACKBONE):
         return config.COMPUTE_BACKBONE_SHAPE(image_shape)
 
@@ -85,25 +71,10 @@ def compute_backbone_shapes(config, image_shape):
             for stride in config.BACKBONE_STRIDES])
 
 
-############################################################
-#  Resnet Graph
-############################################################
-
-# Code adopted from:
-# https://github.com/fchollet/deep-learning-models/blob/master/resnet50.py
 
 def identity_block(input_tensor, kernel_size, filters, stage, block,
                    use_bias=True, train_bn=True):
-    """The identity_block is the block that has no conv layer at shortcut
-    # Arguments
-        input_tensor: input tensor
-        kernel_size: default 3, the kernel size of middle conv layer at main path
-        filters: list of integers, the nb_filters of 3 conv layer at main path
-        stage: integer, current stage label, used for generating layer names
-        block: 'a','b'..., current block label, used for generating layer names
-        use_bias: Boolean. To use or not use a bias in conv layers.
-        train_bn: Boolean. Train or freeze Batch Norm layers
-    """
+    
     nb_filter1, nb_filter2, nb_filter3 = filters
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
@@ -129,18 +100,7 @@ def identity_block(input_tensor, kernel_size, filters, stage, block,
 
 def conv_block(input_tensor, kernel_size, filters, stage, block,
                strides=(2, 2), use_bias=True, train_bn=True):
-    """conv_block is the block that has a conv layer at shortcut
-    # Arguments
-        input_tensor: input tensor
-        kernel_size: default 3, the kernel size of middle conv layer at main path
-        filters: list of integers, the nb_filters of 3 conv layer at main path
-        stage: integer, current stage label, used for generating layer names
-        block: 'a','b'..., current block label, used for generating layer names
-        use_bias: Boolean. To use or not use a bias in conv layers.
-        train_bn: Boolean. Train or freeze Batch Norm layers
-    Note that from stage 3, the first conv layer at main path is with subsample=(2,2)
-    And the shortcut should have subsample=(2,2) as well
-    """
+   
     nb_filter1, nb_filter2, nb_filter3 = filters
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
@@ -169,11 +129,7 @@ def conv_block(input_tensor, kernel_size, filters, stage, block,
 
 
 def resnet_graph(input_image, architecture, stage5=False, train_bn=True):
-    """Build a ResNet graph.
-        architecture: Can be resnet50 or resnet101
-        stage5: Boolean. If False, stage5 of the network is not created
-        train_bn: Boolean. Train or freeze Batch Norm layers
-    """
+    
     assert architecture in ["resnet50", "resnet101"]
     # Stage 1
     x = KL.ZeroPadding2D((3, 3))(input_image)
@@ -206,9 +162,6 @@ def resnet_graph(input_image, architecture, stage5=False, train_bn=True):
     return [C1, C2, C3, C4, C5]
 
 
-############################################################
-#  Proposal Layer
-############################################################
 
 def apply_box_deltas_graph(boxes, deltas):
     """Applies the given deltas to the given boxes.
@@ -253,19 +206,7 @@ def clip_boxes_graph(boxes, window):
 
 
 class ProposalLayer(KE.Layer):
-    """Receives anchor scores and selects a subset to pass as proposals
-    to the second stage. Filtering is done based on anchor scores and
-    non-max suppression to remove overlaps. It also applies bounding
-    box refinement deltas to anchors.
-
-    Inputs:
-        rpn_probs: [batch, num_anchors, (bg prob, fg prob)]
-        rpn_bbox: [batch, num_anchors, (dy, dx, log(dh), log(dw))]
-        anchors: [batch, num_anchors, (y1, x1, y2, x2)] anchors in normalized coordinates
-
-    Returns:
-        Proposals in normalized coordinates [batch, rois, (y1, x1, y2, x2)]
-    """
+    
 
     def __init__(self, proposal_count, nms_threshold, config=None, **kwargs):
         super(ProposalLayer, self).__init__(**kwargs)
@@ -282,8 +223,7 @@ class ProposalLayer(KE.Layer):
         # Anchors
         anchors = inputs[2]
 
-        # Improve performance by trimming to top anchors by score
-        # and doing the rest on the smaller subset.
+
         pre_nms_limit = tf.minimum(self.config.PRE_NMS_LIMIT, tf.shape(anchors)[1])
         ix = tf.nn.top_k(scores, pre_nms_limit, sorted=True,
                          name="top_anchors").indices
@@ -295,26 +235,20 @@ class ProposalLayer(KE.Layer):
                                     self.config.IMAGES_PER_GPU,
                                     names=["pre_nms_anchors"])
 
-        # Apply deltas to anchors to get refined anchors.
-        # [batch, N, (y1, x1, y2, x2)]
+       
         boxes = utils.batch_slice([pre_nms_anchors, deltas],
                                   lambda x, y: apply_box_deltas_graph(x, y),
                                   self.config.IMAGES_PER_GPU,
                                   names=["refined_anchors"])
 
-        # Clip to image boundaries. Since we're in normalized coordinates,
-        # clip to 0..1 range. [batch, N, (y1, x1, y2, x2)]
+       
         window = np.array([0, 0, 1, 1], dtype=np.float32)
         boxes = utils.batch_slice(boxes,
                                   lambda x: clip_boxes_graph(x, window),
                                   self.config.IMAGES_PER_GPU,
                                   names=["refined_anchors_clipped"])
 
-        # Filter out small boxes
-        # According to Xinlei Chen's paper, this reduces detection accuracy
-        # for small objects, so we're skipping it.
-
-        # Non-max suppression
+      
         def nms(boxes, scores):
             indices = tf.image.non_max_suppression(
                 boxes, scores, self.proposal_count,
@@ -332,34 +266,13 @@ class ProposalLayer(KE.Layer):
         return (None, self.proposal_count, 4)
 
 
-############################################################
-#  ROIAlign Layer
-############################################################
-
 def log2_graph(x):
     """Implementation of Log2. TF doesn't have a native implementation."""
     return tf.log(x) / tf.log(2.0)
 
 
 class PyramidROIAlign(KE.Layer):
-    """Implements ROI Pooling on multiple levels of the feature pyramid.
-
-    Params:
-    - pool_shape: [pool_height, pool_width] of the output pooled regions. Usually [7, 7]
-
-    Inputs:
-    - boxes: [batch, num_boxes, (y1, x1, y2, x2)] in normalized
-             coordinates. Possibly padded with zeros if not enough
-             boxes to fill the array.
-    - image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-    - feature_maps: List of feature maps from different levels of the pyramid.
-                    Each is [batch, height, width, channels]
-
-    Output:
-    Pooled regions in the shape: [batch, num_boxes, pool_height, pool_width, channels].
-    The width and height are those specific in the pool_shape in the layer
-    constructor.
-    """
+   
 
     def __init__(self, pool_shape, **kwargs):
         super(PyramidROIAlign, self).__init__(**kwargs)
@@ -369,12 +282,9 @@ class PyramidROIAlign(KE.Layer):
         # Crop boxes [batch, num_boxes, (y1, x1, y2, x2)] in normalized coords
         boxes = inputs[0]
 
-        # Image meta
-        # Holds details about the image. See compose_image_meta()
+
         image_meta = inputs[1]
 
-        # Feature Maps. List of feature maps from different level of the
-        # feature pyramid. Each is [batch, height, width, channels]
         feature_maps = inputs[2:]
 
         # Assign each ROI to a level in the pyramid based on the ROI area.
@@ -450,9 +360,7 @@ class PyramidROIAlign(KE.Layer):
         return input_shape[0][:2] + self.pool_shape + (input_shape[2][-1], )
 
 
-############################################################
-#  Detection Target Layer
-############################################################
+
 
 def overlaps_graph(boxes1, boxes2):
     """Computes IoU overlaps between two sets of boxes.
@@ -484,27 +392,7 @@ def overlaps_graph(boxes1, boxes2):
 
 
 def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, config):
-    """Generates detection targets for one image. Subsamples proposals and
-    generates target class IDs, bounding box deltas, and masks for each.
-
-    Inputs:
-    proposals: [POST_NMS_ROIS_TRAINING, (y1, x1, y2, x2)] in normalized coordinates. Might
-               be zero padded if there are not enough proposals.
-    gt_class_ids: [MAX_GT_INSTANCES] int class IDs
-    gt_boxes: [MAX_GT_INSTANCES, (y1, x1, y2, x2)] in normalized coordinates.
-    gt_masks: [height, width, MAX_GT_INSTANCES] of boolean type.
-
-    Returns: Target ROIs and corresponding class IDs, bounding box shifts,
-    and masks.
-    rois: [TRAIN_ROIS_PER_IMAGE, (y1, x1, y2, x2)] in normalized coordinates
-    class_ids: [TRAIN_ROIS_PER_IMAGE]. Integer class IDs. Zero padded.
-    deltas: [TRAIN_ROIS_PER_IMAGE, (dy, dx, log(dh), log(dw))]
-    masks: [TRAIN_ROIS_PER_IMAGE, height, width]. Masks cropped to bbox
-           boundaries and resized to neural network output size.
-
-    Note: Returned arrays might be zero padded if not enough target ROIs.
-    """
-    # Assertions
+    
     asserts = [
         tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals],
                   name="roi_assertion"),
