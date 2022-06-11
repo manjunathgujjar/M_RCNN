@@ -2,15 +2,6 @@
 Mask R-CNN
 Multi-GPU Support for Keras.
 
-Copyright (c) 2017 Matterport, Inc.
-Licensed under the MIT License (see LICENSE for details)
-Written by Waleed Abdulla
-
-Ideas and a small code snippets from these sources:
-https://github.com/fchollet/keras/issues/2436
-https://medium.com/@kuza55/transparent-multi-gpu-training-on-tensorflow-with-keras-8b0016fd9012
-https://github.com/avolkov1/keras_experiments/blob/master/keras_exp/multigpu/
-https://github.com/fchollet/keras/blob/master/keras/utils/training_utils.py
 """
 
 import tensorflow as tf
@@ -20,12 +11,6 @@ import keras.models as KM
 
 
 class ParallelModel(KM.Model):
-    """Subclasses the standard Keras Model and adds multi-GPU support.
-    It works by creating a copy of the model on each GPU. Then it slices
-    the inputs and sends a slice to each copy of the model, and then
-    merges the outputs together and applies the loss on the combined
-    outputs.
-    """
 
     def __init__(self, keras_model, gpu_count):
         """Class constructor.
@@ -52,11 +37,7 @@ class ParallelModel(KM.Model):
         self.inner_model.summary(*args, **kwargs)
 
     def make_parallel(self):
-        """Creates a new wrapper model that consists of multiple replicas of
-        the original model placed on different GPUs.
-        """
-        # Slice inputs. Slice inputs on the CPU to avoid sending a copy
-        # of the full inputs to all GPUs. Saves on bandwidth and memory.
+        
         input_slices = {name: tf.split(x, self.gpu_count)
                         for name, x in zip(self.inner_model.input_names,
                                            self.inner_model.inputs)}
@@ -85,7 +66,7 @@ class ParallelModel(KM.Model):
                     for l, o in enumerate(outputs):
                         outputs_all[l].append(o)
 
-        # Merge outputs on CPU
+       
         with tf.device('/cpu:0'):
             merged = []
             for outputs, name in zip(outputs_all, output_names):
@@ -143,7 +124,7 @@ if __name__ == "__main__":
 
         return KM.Model(inputs, x, "digit_classifier_model")
 
-    # Load MNIST Data
+    
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
     x_train = np.expand_dims(x_train, -1).astype('float32') / 255
     x_test = np.expand_dims(x_test, -1).astype('float32') / 255
@@ -151,11 +132,11 @@ if __name__ == "__main__":
     print('x_train shape:', x_train.shape)
     print('x_test shape:', x_test.shape)
 
-    # Build data generator and model
+    
     datagen = ImageDataGenerator()
     model = build_model(x_train, 10)
 
-    # Add multi-GPU support.
+    
     model = ParallelModel(model, GPU_COUNT)
 
     optimizer = keras.optimizers.SGD(lr=0.01, momentum=0.9, clipnorm=5.0)
@@ -165,7 +146,7 @@ if __name__ == "__main__":
 
     model.summary()
 
-    # Train
+    
     model.fit_generator(
         datagen.flow(x_train, y_train, batch_size=64),
         steps_per_epoch=50, epochs=10, verbose=1,
